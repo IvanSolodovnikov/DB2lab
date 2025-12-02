@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>DB Viewer</title>
+    <style>
+        body { font-family: Arial; margin: 20px; }
+        table { border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #888; padding: 5px 10px; }
+        input { margin: 3px; }
+    </style>
+</head>
+<body>
+
+<h2>🔐 Login</h2>
+<input id="password" placeholder="password" type="password">
+<button onclick="login()">Login</button>
+
+<h3 id="loginStatus"></h3>
+
+<hr>
+
+<h2>📋 Tables</h2>
+<select id="tables" onchange="loadTable()"></select>
+
+<div id="tableContainer"></div>
+
+<script>
+let token = null;
+let currentTable = null;
+
+// ------------ LOGIN ------------
+async function login() {
+    const form = new FormData();
+    form.append("password", document.getElementById("password").value);
+
+    const res = await fetch("/api/v1/auth/token", {
+        method: "POST",
+        body: form
+    });
+
+    if (!res.ok) {
+        alert("Login failed");
+        return;
+    }
+
+    const data = await res.json();
+    token = data.access_token;
+    document.getElementById("loginStatus").innerText = "Logged in!";
+    loadTables();
+}
+
+
+// ------------ LOAD TABLE LIST ------------
+async function loadTables() {
+    const res = await fetch("/api/v1/tables", {
+        headers: { "Authorization": "Bearer " + token }
+    });
+
+    const tables = await res.json();
+    const select = document.getElementById("tables");
+    select.innerHTML = "";
+
+    tables.forEach(t => {
+        const opt = document.createElement("option");
+        opt.value = t;
+        opt.textContent = t;
+        select.appendChild(opt);
+    });
+
+    if (tables.length > 0) {
+        currentTable = tables[0];
+        loadTable();
+    }
+}
+
+// ------------ LOAD TABLE DATA ------------
+async function loadTable() {
+    currentTable = document.getElementById("tables").value;
+
+    const res = await fetch(`/api/v1/tables/${currentTable}/rows`, {
+        headers: { "Authorization": "Bearer " + token }
+    });
+
+    const data = await res.json();
+    const rows = data.rows;
+
+    if (rows.length === 0) {
+        document.getElementById("tableContainer").innerHTML = "Empty table";
+        return;
+    }
+
+    const columns = Object.keys(rows[0]);
+
+    let html = "<table><tr>";
+    columns.forEach(col => html += `<th>${col}</th>`);
+    html += "<th>Actions</th></tr>";
+
+    rows.forEach(row => {
+        html += "<tr>";
+        columns.forEach(c => html += `<td contenteditable='true' data-col='${c}' data-pk='${columns[0]}'>${row[c]}</td>`);
+        html += `
+            <td>
+                <button onclick='updateRow(this)'>Save</button>
+                <button onclick='deleteRow(this)'>Delete</button>
+            </td>`;
+        html += "</tr>";
+    });
+
+    html += "</table>";
+
+    // Form to add row
+    html += "<h3>Add new row</h3>";
+    columns.forEach(c => html += `<input placeholder="${c}" id="add_${c}"><br>`);
+    html += `<button onclick="addRow()">Add</button>`;
+
+    document.getElementById("tableContainer").innerHTML = html;
+}
+
+// ------------ ADD ROW ------------
+async function addRow() {
+    const pk = {};
+
+    const inputs = document.querySelectorAll("[id^='add_']");
+    const row = {};
+    inputs.forEach(i => {
+        const col = i.id.replace("add_", "");
+        row[col] = i.value;
+    });
+
+    const res = await fetch(`/api/v1/tables/${currentTable}/rows`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + token
+        },
+        body: JSON.stringify(row)
+    });
+
+    if (res.ok) {
+        loadTable();
+    } else {
+        alert("Error adding row");
+    }
+}
+
+// ------------ UPDATE ROW ------------
+async function updateRow(btn) {
+    const tr = btn.closest("tr");
+    const tds = tr.querySelectorAll("td[data-col]");
+
+    const row = {};
+    const pk = {};
+
+    tds.forEach(td => {
+        const col = td.getAttribute("data-col");
+        if (col === tds[0].getAttribute("data-col")) {
+            pk[col] = td.innerText;
+        }
+        row[col] = td.innerText;
+    });
+
+    const res = await fetch(`/api/v1/tables/${currentTable}/rows`, {
+        method: "PUT",
+        headers: {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + token
+        },
+        body: JSON.stringify({ primary_key: pk, row_data: row })
+    });
+
+    if (res.ok) {
+        loadTable();
+    } else {
+        alert("Update failed");
+    }
+}
+
+// ------------ DELETE ROW ------------
+async function deleteRow(btn) {
+    const tr = btn.closest("tr");
+    const tds = tr.querySelectorAll("td[data-col]");
+
+    const pk = {};
+    const pkCol = tds[0].getAttribute("data-col");
+    pk[pkCol] = tds[0].innerText;
+
+    const res = await fetch(`/api/v1/tables/${currentTable}/rows`, {
+        method: "DELETE",
+        headers: {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + token
+        },
+        body: JSON.stringify({ primary_key: pk })
+    });
+
+    if (res.ok) {
+        loadTable();
+    } else {
+        alert("Delete failed");
+    }
+}
+</script>
+
+</body>
+</html>

@@ -32,7 +32,7 @@ os.makedirs("app/static", exist_ok=True)
 os.makedirs("app/templates", exist_ok=True)
 
 # Mount static files
-app.mount("/static", StaticFiles(directory="app/static"), name="static")
+app.mount("/", StaticFiles(directory="app/static", html=True), name="static")
 templates = Jinja2Templates(directory="app/templates")
 
 # Create first superuser on startup
